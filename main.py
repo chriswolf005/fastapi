@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from models import Customer
 from models import Transaction
 from models import Invoice,CustomerCreate
-
+from db import get_session,SessionDep
 
 
 app = FastAPI()
@@ -42,7 +42,7 @@ db_customers :list[Customer]= []
 
 
 @app.post("/customers",response_model=Customer)
-async def create_customer(customer_data:CustomerCreate):
+async def create_customer(customer_data:CustomerCreate,session:SessionDep):
     customer=Customer.model_validate(customer_data.model_dump())
     #Asumiendo que se hace en la base de datos
     customer.id=len(db_customers)+1
