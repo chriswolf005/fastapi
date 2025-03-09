@@ -4,10 +4,11 @@ from zoneinfo import ZoneInfo
 from models import Customer
 from models import Transaction
 from models import Invoice,CustomerCreate
-from db import get_session,SessionDep
+from db import get_session,SessionDep,create_all_tables
+from sqlmodel import Session,select
 
 
-app = FastAPI()
+app = FastAPI(lifespan=create_all_tables())
 
 country_timezone = {
     "CO": "America/Bogota",
@@ -44,15 +45,17 @@ db_customers :list[Customer]= []
 @app.post("/customers",response_model=Customer)
 async def create_customer(customer_data:CustomerCreate,session:SessionDep):
     customer=Customer.model_validate(customer_data.model_dump())
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
     #Asumiendo que se hace en la base de datos
-    customer.id=len(db_customers)+1
-    db_customers.append(customer)
-    
+    #customer.id=len(db_customers)+1
+    #db_customers.append(customer)
     return customer
 
 @app.get("/customers",response_model=list[Customer])
-async def list_customer():
-    return db_customers
+async def list_customer(session:SessionDep):
+    return session.exec(select(Customer)).all()
 
 @app.get("/customers/{customer_id}",response_model=Customer)
 async def list_customerid(customer_id:int):
