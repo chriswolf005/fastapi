@@ -1,15 +1,14 @@
 from datetime import datetime
-from fastapi import FastAPI
+from fastapi import FastAPI, status, Depends, HTTPException
 from zoneinfo import ZoneInfo
-from models import Customer
-from models import Transaction
-from models import Invoice,CustomerCreate
-from db import get_session,SessionDep,create_all_tables
-from sqlmodel import Session,select
+from models import Customer, Transaction, Invoice, CustomerCreate,CustomerUpdate
+from db import get_session, SessionDep, create_all_tables
+from sqlmodel import Session, select
 
-
+# Inicializar la aplicación FastAPI y crear las tablas
 app = FastAPI(lifespan=create_all_tables())
 
+# Diccionario de zonas horarias por país
 country_timezone = {
     "CO": "America/Bogota",
     "US": "America/New_York",
@@ -28,48 +27,82 @@ country_timezone = {
 def read_root():
     return {"message": "Hello, World!"}
 
-@app.get("/time/{iso_code}")  # Agregué la barra '/'
-async def time(iso_code: str):
+@app.get("/time/{iso_code}")
+async def get_time(iso_code: str):
     iso = iso_code.upper()
-    timeZone_str = country_timezone.get(iso)
+    time_zone_str = country_timezone.get(iso)
 
-    if not timeZone_str:
-        return {"error": "Invalid country code"}
+    if not time_zone_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid country code"
+        )
 
-    tz = ZoneInfo(timeZone_str)
+    tz = ZoneInfo(time_zone_str)
     return {"time": datetime.now(tz).isoformat()}
 
-db_customers :list[Customer]= []
-
-
-@app.post("/customers",response_model=Customer)
-async def create_customer(customer_data:CustomerCreate,session:SessionDep):
-    customer=Customer.model_validate(customer_data.model_dump())
+# Endpoint para crear clientes
+@app.post("/customers", response_model=Customer, status_code=status.HTTP_201_CREATED)
+async def create_customer(customer_data: CustomerCreate, session: SessionDep):
+    customer = Customer.model_validate(customer_data.model_dump())
     session.add(customer)
     session.commit()
     session.refresh(customer)
-    #Asumiendo que se hace en la base de datos
-    #customer.id=len(db_customers)+1
-    #db_customers.append(customer)
     return customer
 
-@app.get("/customers",response_model=list[Customer])
-async def list_customer(session:SessionDep):
+# Endpoint para listar todos los clientes
+@app.get("/customers", response_model=list[Customer])
+async def list_customers(session: SessionDep):
     return session.exec(select(Customer)).all()
 
-@app.get("/customers/{customer_id}",response_model=Customer)
-async def list_customerid(customer_id:int):
-    customer=next(c for c in db_customers if c.id==customer_id)
-    return customer
+# Endpoint para obtener un cliente por ID
+@app.get("/customers/{customer_id}", response_model=Customer)
+async def get_customer(session: SessionDep, customer_id: int):
+    customer_db = session.get(Customer, customer_id)
+    if not customer_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer doesn't exist"
+        )
+    return customer_db
 
+# Endpoint para eliminar un cliente por ID
+@app.delete("/customers/{customer_id}", status_code=status.HTTP_200_OK)
+async def delete_customer(session: SessionDep, customer_id: int):
+    customer_db = session.get(Customer, customer_id)
+    if not customer_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer doesn't exist"
+        )
+    session.delete(customer_db)
+    session.commit()
+    return {"message": "Customer deleted successfully"}
 
+# Endpoint para actualizar un cliente por ID
+@app.patch(
+    "/customers/{customer_id}",
+    response_model=Customer,
+    status_code=status.HTTP_201_CREATED,
+)
+async def read_customer(
+    customer_id: int, customer_data: CustomerUpdate, session: SessionDep
+):
+    customer_db = session.get(Customer, customer_id)
+    if not customer_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Customer doesn't exits"
+        )
+    customer_data_dict = customer_data.model_dump(exclude_unset=True)
+    customer_db.sqlmodel_update(customer_data_dict)
+    session.add(customer_db)
+    session.commit()
+    session.refresh(customer_db)
+    return customer_db
 
-@app.post("/transactions")
-async def create_transactions(transaction_data:Transaction):
-    
+# Endpoint para crear transacciones
+@app.post("/transactions", response_model=Transaction)
+async def create_transaction(transaction_data: Transaction):
     return transaction_data
 
-@app.post("/invoices")
-async def create_invoices(invoices_data:Invoice):
-    
-    return invoices_data
+# Endpoint para crear facturas
+@app.post("/invoices", response_model=Invoice)
+async def create_invoice(invoice_data: Invoice):
+    return invoice_data
