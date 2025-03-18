@@ -4,10 +4,12 @@ from zoneinfo import ZoneInfo
 from models import Customer, Transaction, Invoice, CustomerCreate,CustomerUpdate
 from db import get_session, SessionDep, create_all_tables
 from sqlmodel import Session, select
-from .routers import customer
+from .routers import customer ,transactions,plans
 # Inicializar la aplicación FastAPI y crear las tablas
 app = FastAPI(lifespan=create_all_tables())
 app.include_router(customer.router)
+app.include_router(transactions.router)
+app.include_router(plans.router)
 # Diccionario de zonas horarias por país
 country_timezone = {
     "CO": "America/Bogota",
