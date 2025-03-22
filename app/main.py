@@ -1,15 +1,40 @@
+from fastapi import FastAPI, Request, status, HTTPException
 from datetime import datetime
-from fastapi import FastAPI, status, Depends, HTTPException
+import time
 from zoneinfo import ZoneInfo
-from models import Customer, Transaction, Invoice, CustomerCreate,CustomerUpdate
-from db import get_session, SessionDep, create_all_tables
-from sqlmodel import Session, select
-from .routers import customer ,transactions,plans
+from models import Customer, Transaction, Invoice, CustomerCreate, CustomerUpdate
+from db import create_all_tables
+from .routers import customer, transactions, plans
+
 # Inicializar la aplicación FastAPI y crear las tablas
 app = FastAPI(lifespan=create_all_tables())
 app.include_router(customer.router)
 app.include_router(transactions.router)
 app.include_router(plans.router)
+
+# Middleware para imprimir headers y tiempos de respuesta
+@app.middleware("http")
+async def log_request_headers(request: Request, call_next):
+    start_time = time.time()
+    
+    # Imprimir todos los headers
+    print("\n---- Incoming Request Headers ----")
+    for key, value in request.headers.items():
+        print(f"{key}: {value}")
+    print("----------------------------------\n")
+
+    response = await call_next(request)
+
+    # Calcular tiempo de procesamiento
+    process_time = time.time() - start_time
+    print(f"Request {request.url} completed in {process_time:.4f} seconds")
+
+    return response
+
+@app.get("/")
+async def root():
+    return {"message": "Hello, World!"}
+
 # Diccionario de zonas horarias por país
 country_timezone = {
     "CO": "America/Bogota",
@@ -25,10 +50,6 @@ country_timezone = {
     "RD": "America/Santo_Domingo",
 }
 
-@app.get("/")
-def read_root():
-    return {"message": "Hello, World!"}
-
 @app.get("/time/{iso_code}")
 async def get_time(iso_code: str):
     iso = iso_code.upper()
@@ -41,4 +62,3 @@ async def get_time(iso_code: str):
 
     tz = ZoneInfo(time_zone_str)
     return {"time": datetime.now(tz).isoformat()}
-
