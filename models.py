@@ -1,56 +1,92 @@
-from pydantic import BaseModel
-from sqlmodel import Field, Relationship, SQLModel
+from pydantic import BaseModel, EmailStr, field_validator
+from sqlmodel import Field, Relationship, SQLModel, Session, select
+from db import engine
+from enum import Enum
 
+class StatusEnum(str, Enum):
+    ACTIVE = 'active'
+    INACTIVE = 'inactive'
 
-class CustomerPlan(SQLModel,table=True):
-    id:int=Field(primary_key=True)
-    plan_id:int=Field(foreign_key="plan.id")
-    customer_id:int=Field(foreign_key="customer.id")
+class CustomerPlan(SQLModel, table=True):
+    id: int = Field(primary_key=True)
+    plan_id: int = Field(foreign_key="plan.id")
+    customer_id: int = Field(foreign_key="customer.id")
+    status: StatusEnum = Field(default=StatusEnum.ACTIVE)
 
-class Plan(SQLModel,table=True):
-    id: int|None=Field(primary_key=True)
-    name: str= Field(default=None)
-    price: int=Field(default=None)
-    descripcion: str = Field(default=None)  # Corregido: 'descripcion' a 'description'
+class Plan(SQLModel, table=True):
+    id: int | None = Field(primary_key=True)
+    name: str = Field(default=None)
+    price: int = Field(default=None)
+    descripcion: str = Field(default=None)
     
-    # Relación con Customer a través de la tabla intermedia
     customers: list["Customer"] = Relationship(back_populates="plans", link_model=CustomerPlan)
+
+    @field_validator("price")
+    @classmethod
+    def validate_price(cls, value):
+        if value < 0:
+            raise ValueError("Price must be a non-negative value.")
+        return value
 
 class CustomerBase(SQLModel):
     name: str = Field(default=None)
     description: str | None = Field(default=None)
-    email: str = Field(default=None)
+    email: EmailStr = Field(default=None)
     age: int = Field(default=None)
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        session = Session(engine)
+        query = select(Customer).where(Customer.email == value)
+        result = session.exec(query).first()
+        if result:
+            raise ValueError("This email is already registered.")
+        return value
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value):
+        if not value.strip():
+            raise ValueError("Name cannot be empty or contain only spaces.")
+        return value
+
+    @field_validator("age")
+    @classmethod
+    def validate_age(cls, value):
+        if value < 18:
+            raise ValueError("Customer must be at least 18 years old.")
+        return value
 
 class CustomerCreate(CustomerBase):
     pass
 
-
 class CustomerUpdate(CustomerBase):
     pass
-
 
 class Customer(CustomerBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     transactions: list["Transaction"] = Relationship(back_populates="customer")
-        # Relación con Plan a través de la tabla intermedia
     plans: list[Plan] = Relationship(back_populates="customers", link_model=CustomerPlan)
 
 class TransactionBase(SQLModel):
     ammount: int
     description: str
 
+    @field_validator("ammount")
+    @classmethod
+    def validate_ammount(cls, value):
+        if value <= 0:
+            raise ValueError("Transaction amount must be a positive number.")
+        return value
 
 class Transaction(TransactionBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     customer_id: int = Field(foreign_key="customer.id")
     customer: Customer = Relationship(back_populates="transactions")
 
-
 class TransactionCreate(TransactionBase):
     customer_id: int = Field(foreign_key="customer.id")
-
 
 class Invoice(BaseModel):
     id: int
